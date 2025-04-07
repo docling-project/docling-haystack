@@ -4,16 +4,22 @@
 #
 
 """Docling Haystack converter module."""
-
+import logging
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from docling.chunking import BaseChunk, BaseChunker, HybridChunker
 from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
 from haystack import Document, component
+from haystack.components.converters.utils import (
+    get_bytestream_from_source,
+    normalize_metadata,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ExportType(str, Enum):
@@ -103,37 +109,56 @@ class DoclingConverter:
     @component.output_types(documents=list[Document])
     def run(
         self,
-        paths: Iterable[Union[Path, str]],
+        # sources: List[Union[str, Path, ByteStream]], # TODO ByStream not supported yet
+        sources: List[Union[str, Path]],
+        meta: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
     ):
         """Run the DoclingConverter.
 
         Args:
-            paths: The input document locations, either as local paths or URLs.
+            sources: List of file paths or byte streams to convert.
+                Paths can be files or directories. ByteStream is also supported.
+            meta: Optional metadata to attach to the Documents.
+                This value can be a single dictionary or a list of dictionaries,
+                matching the number of sources.
 
         Returns:
             list[Document]: The output Haystack Documents.
         """
         documents: list[Document] = []
-        for filepath in paths:
+        meta_list = normalize_metadata(meta, len(sources))
+
+        for source, metadata in zip(sources, meta_list):
+            try:
+                bytestream = get_bytestream_from_source(source=source)
+            except Exception as e:
+                logger.warning(f"Could not read {source}. Skipping it. Error: {str(e)}")
+                continue
+
+            hs_docs = []
             dl_doc = self._converter.convert(
-                source=filepath,
+                source=source,
                 **self._convert_kwargs,
             ).document
 
             if self._export_type == ExportType.DOC_CHUNKS:
                 chunk_iter = self._chunker.chunk(dl_doc=dl_doc)
-                hs_docs = [
-                    Document(
-                        content=self._chunker.serialize(chunk=chunk),
-                        meta=self._meta_extractor.extract_chunk_meta(chunk=chunk),
+                for chunk in chunk_iter:
+                    docling_meta = self._meta_extractor.extract_chunk_meta(chunk=chunk)
+                    merged_metadata = {**bytestream.meta, **docling_meta, **metadata}
+                    hs_docs.append(
+                        Document(
+                            content=self._chunker.serialize(chunk=chunk),
+                            meta=merged_metadata,
+                        )
                     )
-                    for chunk in chunk_iter
-                ]
                 documents.extend(hs_docs)
             elif self._export_type == ExportType.MARKDOWN:
+                docling_meta = self._meta_extractor.extract_dl_doc_meta(dl_doc=dl_doc)
+                merged_metadata = {**bytestream.meta, **docling_meta, **metadata}
                 hs_doc = Document(
                     content=dl_doc.export_to_markdown(**self._md_export_kwargs),
-                    meta=self._meta_extractor.extract_dl_doc_meta(dl_doc=dl_doc),
+                    meta=merged_metadata,
                 )
                 documents.append(hs_doc)
             else:
