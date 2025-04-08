@@ -10,7 +10,7 @@ packages = [{ include = "docling_haystack" }]
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"  # constraining below 3.13 due to haystack-ai 2.8.0
 haystack-ai = "^2.8.0"
-docling = "^2.9.0"
+docling = "^2.28.4"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.5"
