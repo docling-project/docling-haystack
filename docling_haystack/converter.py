@@ -5,12 +5,15 @@
 
 """Docling Haystack converter module."""
 import logging
+import mimetypes
 from abc import ABC, abstractmethod
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from docling.chunking import BaseChunk, BaseChunker, HybridChunker
+from docling.datamodel.base_models import DocumentStream
 from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
 from haystack import Document, component
@@ -18,6 +21,7 @@ from haystack.components.converters.utils import (
     get_bytestream_from_source,
     normalize_metadata,
 )
+from haystack.dataclasses import ByteStream
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +110,54 @@ class DoclingConverter:
             )
         self._meta_extractor = meta_extractor or MetaExtractor()
 
+    def _extract_filename_with_extension(
+        self, source: Union[str, Path, ByteStream], bytestream: ByteStream
+    ) -> str:
+        """Extract filename with appropriate extension from source or bytestream.
+
+        Args:
+            source: The source object (str, Path, or ByteStream)
+            bytestream: The bytestream created from the source
+
+        Returns:
+            str: The extracted filename with appropriate extension
+        """
+        # Default filename
+        filename = "unknown.pdf"
+
+        # Extract filename from source
+        if isinstance(source, str) or isinstance(source, Path):
+            filename = Path(source).name
+        elif isinstance(source, ByteStream) and hasattr(source, "meta"):
+            # Try to get filename from ByteStream metadata
+            if "filename" in source.meta:
+                filename = source.meta["filename"]
+            elif "name" in source.meta:
+                filename = source.meta["name"]
+            # Try to infer extension from mime_type if available
+            if "mime_type" in source.meta and not Path(filename).suffix:
+                extension = mimetypes.guess_extension(source.meta["mime_type"])
+                if extension:
+                    filename = f"{Path(filename).stem}{extension}"
+
+        # Check if bytestream metadata contains filename
+        if hasattr(bytestream, "meta"):
+            if "filename" in bytestream.meta:
+                filename = bytestream.meta["filename"]
+            elif "name" in bytestream.meta:
+                filename = bytestream.meta["name"]
+            # Try to infer extension from mime_type if available
+            if "mime_type" in bytestream.meta and not Path(filename).suffix:
+                extension = mimetypes.guess_extension(bytestream.meta["mime_type"])
+                if extension:
+                    filename = f"{Path(filename).stem}{extension}"
+
+        return filename
+
     @component.output_types(documents=list[Document])
     def run(
         self,
-        # sources: List[Union[str, Path, ByteStream]], # TODO ByStream not supported yet
-        sources: List[Union[str, Path]],
+        sources: List[Union[str, Path, ByteStream]],
         meta: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
     ):
         """Run the DoclingConverter.
@@ -135,9 +182,16 @@ class DoclingConverter:
                 logger.warning(f"Could not read {source}. Skipping it. Error: {str(e)}")
                 continue
 
+            # Extract filename with appropriate extension
+            filename = self._extract_filename_with_extension(source, bytestream)
+
+            source_docling = DocumentStream(
+                name=filename, stream=BytesIO(bytestream.data)
+            )
+
             hs_docs = []
             dl_doc = self._converter.convert(
-                source=source,
+                source=source_docling,
                 **self._convert_kwargs,
             ).document
 
