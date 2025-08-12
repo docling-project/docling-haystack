@@ -51,4 +51,4 @@ When initializing a `DoclingConverter`, you can use the following parameters:
 ### Example
 
 For an end-to-end usage example, check out
-[this notebook](https://ds4sd.github.io/docling/examples/rag_haystack/).
+[this notebook](https://docling-project.github.io/docling/examples/rag_haystack/).
