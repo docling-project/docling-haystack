@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from docling.chunking import HybridChunker
 from docling.datamodel.document import DoclingDocument
+from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 
 from docling_haystack.converter import DoclingConverter, ExportType
 
@@ -35,7 +36,10 @@ def test_convert_doc_chunks(monkeypatch):
     # TODO: chunking is currently performed; it should best be mocked instead
     converter = DoclingConverter(
         export_type=ExportType.DOC_CHUNKS,
-        chunker=HybridChunker(tokenizer=EMBED_MODEL_ID),
+        chunker=HybridChunker(
+            tokenizer=HuggingFaceTokenizer.from_pretrained(model_name=EMBED_MODEL_ID)
+            
+        ),
     )
     docs = converter.run(paths=PATHS)["documents"]
     act_data = dict(root=[d.to_dict() for d in docs])

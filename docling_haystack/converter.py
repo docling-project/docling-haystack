@@ -94,10 +94,7 @@ class DoclingConverter:
             else {"image_placeholder": ""}
         )
         if self._export_type == ExportType.DOC_CHUNKS:
-            # TODO remove tokenizer once docling-core ^2.10.0 guaranteed via docling:
-            self._chunker = chunker or HybridChunker(
-                tokenizer="sentence-transformers/all-MiniLM-L6-v2"
-            )
+            self._chunker = chunker or HybridChunker()
         self._meta_extractor = meta_extractor or MetaExtractor()
 
     @component.output_types(documents=list[Document])
@@ -124,7 +121,7 @@ class DoclingConverter:
                 chunk_iter = self._chunker.chunk(dl_doc=dl_doc)
                 hs_docs = [
                     Document(
-                        content=self._chunker.serialize(chunk=chunk),
+                        content=self._chunker.contextualize(chunk=chunk),
                         meta=self._meta_extractor.extract_chunk_meta(chunk=chunk),
                     )
                     for chunk in chunk_iter
